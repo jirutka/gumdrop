@@ -35,7 +35,7 @@
 //!   The value of this field is parsed in the same way as argument values.
 //! * `default_expr` provides a default value for the option field.
 //!   The value of this field is parsed at compile time as a Rust expression
-//!   and is evaluated before any argument values are processed.  
+//!   and is evaluated before any argument values are processed.
 //!   The `default_expr` feature must be enabled to use this attribute.
 //! * `required` will cause an error if the option is not present,
 //!   unless at least one `help_flag` option is also present.
@@ -69,7 +69,7 @@
 //!
 //! Supported items for `enum` variants are:
 //!
-//! * `name = "..."` sets the user-facing command name.  
+//! * `name = "..."` sets the user-facing command name.
 //!   If this option is not present, one is automatically generated from the variant name.
 //! * `help = "..."` sets the help string for the command;
 //!   variant doc comment may also be provided to set the help text.
