@@ -975,74 +975,42 @@ impl AttrOpts {
         }
 
         if self.command {
-            if self.free {
-                err!("`command` and `free` are mutually exclusive");
-            }
-            if self.default.is_some() {
-                err!("`command` and `default` are mutually exclusive");
-            }
-            if self.multi.is_some() {
-                err!("`command` and `multi` are mutually exclusive");
-            }
-            if self.long.is_some() {
-                err!("`command` and `long` are mutually exclusive");
-            }
-            if self.short.is_some() {
-                err!("`command` and `short` are mutually exclusive");
-            }
-            if self.count {
-                err!("`command` and `count` are mutually exclusive");
-            }
-            if self.help_flag {
-                err!("`command` and `help_flag` are mutually exclusive");
-            }
-            if self.no_help_flag {
-                err!("`command` and `no_help_flag` are mutually exclusive");
-            }
-            if self.no_short {
-                err!("`command` and `no_short` are mutually exclusive");
-            }
-            if self.no_long {
-                err!("`command` and `no_long` are mutually exclusive");
-            }
-            if self.no_multi {
-                err!("`command` and `no_multi` are mutually exclusive");
-            }
-            if self.help.is_some() {
-                err!("`command` and `help` are mutually exclusive");
-            }
-            if self.meta.is_some() {
-                err!("`command` and `meta` are mutually exclusive");
+            for (name, is_used) in [
+                ("free", self.free),
+                ("default", self.default.is_some()),
+                ("multi", self.multi.is_some()),
+                ("long", self.long.is_some()),
+                ("short", self.short.is_some()),
+                ("count", self.count),
+                ("help_flag", self.help_flag),
+                ("no_help_flag", self.no_help_flag),
+                ("no_short", self.no_short),
+                ("no_long", self.no_long),
+                ("no_multi", self.no_multi),
+                ("help", self.help.is_some()),
+                ("meta", self.meta.is_some()),
+            ] {
+                if is_used {
+                    err!(format!("`command` and `{}` are mutually exclusive", name));
+                }
             }
         }
 
         if self.free {
-            if self.default.is_some() {
-                err!("`free` and `default` are mutually exclusive");
-            }
-            if self.long.is_some() {
-                err!("`free` and `long` are mutually exclusive");
-            }
-            if self.short.is_some() {
-                err!("`free` and `short` are mutually exclusive");
-            }
-            if self.count {
-                err!("`free` and `count` are mutually exclusive");
-            }
-            if self.help_flag {
-                err!("`free` and `help_flag` are mutually exclusive");
-            }
-            if self.no_help_flag {
-                err!("`free` and `no_help_flag` are mutually exclusive");
-            }
-            if self.no_short {
-                err!("`free` and `no_short` are mutually exclusive");
-            }
-            if self.no_long {
-                err!("`free` and `no_long` are mutually exclusive");
-            }
-            if self.meta.is_some() {
-                err!("`free` and `meta` are mutually exclusive");
+            for (name, is_used) in [
+                ("default", self.default.is_some()),
+                ("long", self.long.is_some()),
+                ("short", self.short.is_some()),
+                ("count", self.count),
+                ("help_flag", self.help_flag),
+                ("no_help_flag", self.no_help_flag),
+                ("no_short", self.no_short),
+                ("no_long", self.no_long),
+                ("meta", self.meta.is_some()),
+            ] {
+                if is_used {
+                    err!(format!("`free` and `{}` are mutually exclusive", name));
+                }
             }
         }
 
