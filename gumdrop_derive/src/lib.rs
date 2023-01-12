@@ -81,20 +81,19 @@
 
 #![recursion_limit = "1024"]
 
-use std::iter::repeat;
+mod parse_attrs;
 
-use quote::quote;
+use std::iter::repeat;
 
 use proc_macro::TokenStream;
 use proc_macro2::{Span, TokenStream as TokenStream2};
-
+use quote::quote;
+use syn::parse::Error;
 use syn::{
-    parse::Error, parse_str, spanned::Spanned, AttrStyle, Attribute, Data, DataEnum, DataStruct,
-    DeriveInput, Fields, GenericArgument, Ident, Lit, Meta, NestedMeta, Path, PathArguments, Type,
+    Data, DataEnum, DataStruct, DeriveInput, Fields, GenericArgument, Ident, PathArguments, Type,
 };
 
-#[cfg(feature = "default_expr")]
-use syn::Expr;
+use crate::parse_attrs::*;
 
 /// Derives the `gumdrop::Options` trait for `struct` and `enum` items.
 ///
@@ -795,54 +794,11 @@ enum Action {
     Switch,
 }
 
-#[derive(Default)]
-struct AttrOpts {
-    long: Option<String>,
-    short: Option<char>,
-    multi: Option<Ident>,
-    free: bool,
-    count: bool,
-    help_flag: bool,
-    no_help_flag: bool,
-    no_short: bool,
-    no_long: bool,
-    no_multi: bool,
-    required: bool,
-    not_required: bool,
-    doc: Option<String>,
-    help: Option<String>,
-    meta: Option<String>,
-    parse: Option<ParseFn>,
-    default: Option<String>,
-    #[cfg(feature = "default_expr")]
-    default_expr: Option<Expr>,
-
-    command: bool,
-}
-
 struct Cmd<'a> {
     name: String,
     help: Option<String>,
     variant_name: &'a Ident,
     ty: &'a Type,
-}
-
-#[derive(Default)]
-struct CmdOpts {
-    name: Option<String>,
-    doc: Option<String>,
-    help: Option<String>,
-}
-
-#[derive(Default)]
-struct DefaultOpts {
-    no_help_flag: bool,
-    no_long: bool,
-    no_multi: bool,
-    no_short: bool,
-    required: bool,
-    doc: Option<String>,
-    help: Option<String>,
 }
 
 enum FreeAction {
@@ -871,16 +827,6 @@ struct Opt<'a> {
     default: Option<String>,
     // NOTE: `default_expr` is not contained here
     // because it is not displayed to the user in usage text
-}
-
-#[derive(Clone, Default)]
-enum ParseFn {
-    #[default]
-    Default,
-    FromStr(Option<Path>),
-    TryFromStr(Path),
-    FromOsStr(Option<Path>),
-    TryFromOsStr(Path),
 }
 
 struct ParseMethod {
@@ -966,358 +912,78 @@ impl Action {
     }
 }
 
-impl AttrOpts {
-    fn check(&self, span: Span) -> Result<(), Error> {
-        macro_rules! err {
-            ( $($tt:tt)* ) => { {
-                return Err(Error::new(span, $($tt)*));
-            } }
-        }
+impl ParseFn {
+    fn make_parse_action(&self, name: Option<&str>) -> TokenStream2 {
+        let name = if let Some(name) = name {
+            quote! { ::std::string::ToString::to_string(#name) }
+        } else {
+            quote! { ::gumdrop::Opt::to_string(&_opt) }
+        };
 
-        if self.command {
-            for (name, is_used) in [
-                ("free", self.free),
-                ("default", self.default.is_some()),
-                ("multi", self.multi.is_some()),
-                ("long", self.long.is_some()),
-                ("short", self.short.is_some()),
-                ("count", self.count),
-                ("help_flag", self.help_flag),
-                ("no_help_flag", self.no_help_flag),
-                ("no_short", self.no_short),
-                ("no_long", self.no_long),
-                ("no_multi", self.no_multi),
-                ("help", self.help.is_some()),
-                ("meta", self.meta.is_some()),
-            ] {
-                if is_used {
-                    err!(format!("`command` and `{}` are mutually exclusive", name));
-                }
-            }
-        }
-
-        if self.free {
-            for (name, is_used) in [
-                ("default", self.default.is_some()),
-                ("long", self.long.is_some()),
-                ("short", self.short.is_some()),
-                ("count", self.count),
-                ("help_flag", self.help_flag),
-                ("no_help_flag", self.no_help_flag),
-                ("no_short", self.no_short),
-                ("no_long", self.no_long),
-                ("meta", self.meta.is_some()),
-            ] {
-                if is_used {
-                    err!(format!("`free` and `{}` are mutually exclusive", name));
-                }
-            }
-        }
-
-        if self.multi.is_some() && self.no_multi {
-            err!("`multi` and `no_multi` are mutually exclusive");
-        }
-
-        if self.help_flag && self.no_help_flag {
-            err!("`help_flag` and `no_help_flag` are mutually exclusive");
-        }
-
-        if self.no_short && self.short.is_some() {
-            err!("`no_short` and `short` are mutually exclusive");
-        }
-
-        if self.no_long && self.long.is_some() {
-            err!("`no_long` and `long` are mutually exclusive");
-        }
-
-        if self.required && self.not_required {
-            err!("`required` and `not_required` are mutually exclusive");
-        }
-
-        if self.parse.is_some() && self.count {
-            err!("`count` and `parse` are mutually exclusive");
-        }
-
-        #[cfg(feature = "default_expr")]
-        {
-            if self.default.is_some() && self.default_expr.is_some() {
-                err!("`default` and `default_expr` are mutually exclusive");
-            }
-        }
-
-        Ok(())
-    }
-
-    fn parse(span: Span, attrs: &[Attribute]) -> Result<AttrOpts, Error> {
-        let mut opts = AttrOpts::default();
-
-        for attr in attrs {
-            if is_outer(attr.style) {
-                if path_eq(&attr.path, "doc") {
-                    let meta = attr.parse_meta()?;
-
-                    if let Meta::NameValue(nv) = meta {
-                        let doc = lit_str(&nv.lit)?;
-
-                        if opts.doc.is_none() {
-                            opts.doc = Some(doc.trim_start().to_owned());
-                        }
-                    }
-                } else if path_eq(&attr.path, "options") {
-                    let meta = attr.parse_meta()?;
-
-                    match meta {
-                        Meta::Path(path) => {
-                            return Err(Error::new(
-                                path.span(),
-                                "`#[options]` is not a valid attribute",
-                            ))
-                        }
-                        Meta::NameValue(nv) => {
-                            return Err(Error::new(
-                                nv.path.span(),
-                                "`#[options = ...]` is not a valid attribute",
-                            ))
-                        }
-                        Meta::List(items) => {
-                            for item in &items.nested {
-                                opts.parse_item(item)?;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        opts.check(span)?;
-
-        Ok(opts)
-    }
-
-    fn parse_item(&mut self, item: &NestedMeta) -> Result<(), Error> {
-        match item {
-            NestedMeta::Lit(lit) => return Err(unexpected_meta_item(lit.span())),
-            NestedMeta::Meta(item) => match item {
-                Meta::Path(path) => match path.get_ident() {
-                    Some(ident) => match ident.to_string().as_str() {
-                        "free" => self.free = true,
-                        "command" => self.command = true,
-                        "count" => self.count = true,
-                        "help_flag" => self.help_flag = true,
-                        "no_help_flag" => self.no_help_flag = true,
-                        "no_short" => self.no_short = true,
-                        "no_long" => self.no_long = true,
-                        "no_multi" => self.no_multi = true,
-                        "required" => self.required = true,
-                        "not_required" => self.not_required = true,
-                        _ => return Err(unexpected_meta_item(path.span())),
-                    },
-                    None => return Err(unexpected_meta_item(path.span())),
-                },
-                Meta::List(list) => match list.path.get_ident() {
-                    Some(ident) if *ident == "parse" => {
-                        if list.nested.len() != 1 {
-                            return Err(unexpected_meta_item(list.path.span()));
-                        }
-
-                        self.parse = Some(ParseFn::parse(&list.nested[0])?);
-                    }
-                    _ => return Err(unexpected_meta_item(list.path.span())),
-                },
-                Meta::NameValue(nv) => match nv.path.get_ident() {
-                    Some(ident) => match ident.to_string().as_str() {
-                        "default" => self.default = Some(lit_str(&nv.lit)?),
-                        #[cfg(feature = "default_expr")]
-                        "default_expr" => {
-                            let expr = parse_str(&lit_str(&nv.lit)?)?;
-                            self.default_expr = Some(expr);
-                        }
-                        #[cfg(not(feature = "default_expr"))]
-                        "default_expr" => {
-                            return Err(Error::new(
-                                nv.path.span(),
-                                "compile gumdrop with the `default_expr` \
-                                    feature to enable this attribute",
-                            ));
-                        }
-                        "long" => self.long = Some(lit_str(&nv.lit)?),
-                        "short" => self.short = Some(lit_char(&nv.lit)?),
-                        "help" => self.help = Some(lit_str(&nv.lit)?),
-                        "meta" => self.meta = Some(lit_str(&nv.lit)?),
-                        "multi" => {
-                            let name = parse_str(&lit_str(&nv.lit)?)?;
-                            self.multi = Some(name);
-                        }
-                        _ => return Err(unexpected_meta_item(nv.path.span())),
-                    },
-                    None => return Err(unexpected_meta_item(nv.path.span())),
-                },
+        match self {
+            ParseFn::Default => quote! {
+                ::std::str::FromStr::from_str(::gumdrop::to_str(_arg)?)
+                    .map_err(|e| ::gumdrop::Error::failed_parse_with_name(
+                        #name, ::std::string::ToString::to_string(&e)))?
+            },
+            ParseFn::FromStr(None) => quote! {
+                ::std::convert::From::from(::gumdrop::to_str(_arg)?)
+            },
+            ParseFn::FromStr(Some(fun)) => quote! {
+                #fun(::gumdrop::to_str(_arg)?)
+            },
+            ParseFn::TryFromStr(fun) => quote! {
+                #fun(::gumdrop::to_str(_arg)?)
+                    .map_err(|e| ::gumdrop::Error::failed_parse_with_name(
+                        #name, ::std::string::ToString::to_string(&e)))?
+            },
+            ParseFn::FromOsStr(None) => quote! {
+                ::std::convert::From::from(_arg)
+            },
+            ParseFn::FromOsStr(Some(fun)) => quote! {
+                #fun(_arg)
+            },
+            ParseFn::TryFromOsStr(fun) => quote! {
+                #fun(_arg)
+                    .map_err(|e| ::gumdrop::Error::failed_parse_with_name(
+                        #name, ::std::string::ToString::to_string(&e)))?
             },
         }
-
-        Ok(())
     }
 
-    fn set_defaults(&mut self, defaults: &DefaultOpts) {
-        if !self.help_flag && defaults.no_help_flag {
-            self.no_help_flag = true;
-        }
-        if self.short.is_none() && defaults.no_short {
-            self.no_short = true;
-        }
-        if self.long.is_none() && defaults.no_long {
-            self.no_long = true;
-        }
-        if self.multi.is_none() && defaults.no_multi {
-            self.no_multi = true;
-        }
-
-        if self.not_required {
-            self.required = false;
-        } else if defaults.required {
-            self.required = true;
-        }
-    }
-}
-
-impl CmdOpts {
-    fn parse(attrs: &[Attribute]) -> Result<CmdOpts, Error> {
-        let mut opts = CmdOpts::default();
-
-        for attr in attrs {
-            if is_outer(attr.style) {
-                if path_eq(&attr.path, "doc") {
-                    let meta = attr.parse_meta()?;
-
-                    if let Meta::NameValue(nv) = meta {
-                        let doc = lit_str(&nv.lit)?;
-
-                        if opts.doc.is_none() {
-                            opts.doc = Some(doc.trim_start().to_owned());
-                        }
-                    }
-                } else if path_eq(&attr.path, "options") {
-                    let meta = attr.parse_meta()?;
-
-                    match meta {
-                        Meta::Path(path) => {
-                            return Err(Error::new(
-                                path.span(),
-                                "`#[options]` is not a valid attribute",
-                            ))
-                        }
-                        Meta::NameValue(nv) => {
-                            return Err(Error::new(
-                                nv.path.span(),
-                                "`#[options = ...]` is not a valid attribute",
-                            ))
-                        }
-                        Meta::List(items) => {
-                            for item in &items.nested {
-                                opts.parse_item(item)?;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok(opts)
-    }
-
-    fn parse_item(&mut self, item: &NestedMeta) -> Result<(), Error> {
-        match item {
-            NestedMeta::Lit(lit) => return Err(unexpected_meta_item(lit.span())),
-            NestedMeta::Meta(item) => match item {
-                Meta::Path(path) => return Err(unexpected_meta_item(path.span())),
-                Meta::List(list) => return Err(unexpected_meta_item(list.path.span())),
-                Meta::NameValue(nv) => match nv.path.get_ident() {
-                    Some(ident) => match ident.to_string().as_str() {
-                        "name" => self.name = Some(lit_str(&nv.lit)?),
-                        "help" => self.help = Some(lit_str(&nv.lit)?),
-                        _ => return Err(unexpected_meta_item(nv.path.span())),
-                    },
-                    None => return Err(unexpected_meta_item(nv.path.span())),
-                },
+    fn make_parse_default_action(&self, ident: &Ident, expr: &str) -> TokenStream2 {
+        match self {
+            ParseFn::Default => quote! {
+                ::std::str::FromStr::from_str(#expr)
+                    .map_err(|e| ::gumdrop::Error::failed_parse_default(
+                        stringify!(#ident), #expr,
+                        ::std::string::ToString::to_string(&e)))?
+            },
+            ParseFn::FromStr(None) => quote! {
+                ::std::convert::From::from(#expr)
+            },
+            ParseFn::FromStr(Some(fun)) => quote! {
+                #fun(#expr)
+            },
+            ParseFn::TryFromStr(fun) => quote! {
+                #fun(#expr)
+                    .map_err(|e| ::gumdrop::Error::failed_parse_default(
+                        stringify!(#ident), #expr,
+                        ::std::string::ToString::to_string(&e)))?
+            },
+            ParseFn::FromOsStr(None) => quote! {
+                ::std::convert::From::from(::std::ffi::OsStr::new(#expr))
+            },
+            ParseFn::FromOsStr(Some(fun)) => quote! {
+                #fun(::std::ffi::OsStr::new(#expr))
+            },
+            ParseFn::TryFromOsStr(fun) => quote! {
+                #fun(::std::ffi::OsStr::new(#expr))
+                    .map_err(|e| ::gumdrop::Error::failed_parse_default(
+                        stringify!(#ident), #expr,
+                        ::std::string::ToString::to_string(&e)))?
             },
         }
-
-        Ok(())
-    }
-}
-
-impl DefaultOpts {
-    fn parse(attrs: &[Attribute]) -> Result<DefaultOpts, Error> {
-        let mut opts = DefaultOpts::default();
-
-        for attr in attrs {
-            if is_outer(attr.style) {
-                if path_eq(&attr.path, "doc") {
-                    let meta = attr.parse_meta()?;
-
-                    if let Meta::NameValue(nv) = meta {
-                        let doc = lit_str(&nv.lit)?;
-
-                        if let Some(text) = opts.doc.as_mut() {
-                            text.push('\n');
-                            text.push_str(doc.trim_start());
-                        } else {
-                            opts.doc = Some(doc.trim_start().to_owned());
-                        }
-                    }
-                } else if path_eq(&attr.path, "options") {
-                    let meta = attr.parse_meta()?;
-
-                    match meta {
-                        Meta::Path(path) => {
-                            return Err(Error::new(
-                                path.span(),
-                                "`#[options]` is not a valid attribute",
-                            ))
-                        }
-                        Meta::NameValue(nv) => {
-                            return Err(Error::new(
-                                nv.path.span(),
-                                "`#[options = ...]` is not a valid attribute",
-                            ))
-                        }
-                        Meta::List(items) => {
-                            for item in &items.nested {
-                                opts.parse_item(item)?;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok(opts)
-    }
-
-    fn parse_item(&mut self, item: &NestedMeta) -> Result<(), Error> {
-        match item {
-            NestedMeta::Lit(lit) => return Err(unexpected_meta_item(lit.span())),
-            NestedMeta::Meta(item) => match item {
-                Meta::Path(path) => match path.get_ident() {
-                    Some(ident) => match ident.to_string().as_str() {
-                        "no_help_flag" => self.no_help_flag = true,
-                        "no_short" => self.no_short = true,
-                        "no_long" => self.no_long = true,
-                        "no_multi" => self.no_multi = true,
-                        "required" => self.required = true,
-                        _ => return Err(unexpected_meta_item(ident.span())),
-                    },
-                    None => return Err(unexpected_meta_item(path.span())),
-                },
-                Meta::NameValue(nv) => match nv.path.get_ident() {
-                    Some(ident) if *ident == "help" => self.help = Some(lit_str(&nv.lit)?),
-                    _ => return Err(unexpected_meta_item(nv.path.span())),
-                },
-                Meta::List(list) => return Err(unexpected_meta_item(list.path.span())),
-            },
-        }
-
-        Ok(())
     }
 }
 
@@ -1517,122 +1183,6 @@ impl<'a> Opt<'a> {
     }
 }
 
-impl ParseFn {
-    fn parse(item: &NestedMeta) -> Result<ParseFn, Error> {
-        let result = match item {
-            NestedMeta::Meta(Meta::Path(path)) => match path.get_ident() {
-                Some(ident) => match ident.to_string().as_str() {
-                    "from_str" => ParseFn::FromStr(None),
-                    "try_from_str" => ParseFn::Default,
-                    "from_os_str" => ParseFn::FromOsStr(None),
-                    _ => return Err(unexpected_meta_item(ident.span())),
-                },
-                None => return Err(unexpected_meta_item(path.span())),
-            },
-            NestedMeta::Meta(Meta::NameValue(nv)) => match nv.path.get_ident() {
-                Some(ident) => match ident.to_string().as_str() {
-                    "from_str" => {
-                        let path = parse_str(&lit_str(&nv.lit)?)?;
-                        ParseFn::FromStr(Some(path))
-                    }
-                    "try_from_str" => {
-                        let path = parse_str(&lit_str(&nv.lit)?)?;
-                        ParseFn::TryFromStr(path)
-                    }
-                    "from_os_str" => {
-                        let path = parse_str(&lit_str(&nv.lit)?)?;
-                        ParseFn::FromOsStr(Some(path))
-                    }
-                    "try_from_os_str" => {
-                        let path = parse_str(&lit_str(&nv.lit)?)?;
-                        ParseFn::TryFromOsStr(path)
-                    }
-                    _ => return Err(unexpected_meta_item(nv.path.span())),
-                },
-                None => return Err(unexpected_meta_item(nv.path.span())),
-            },
-            NestedMeta::Lit(_) | NestedMeta::Meta(Meta::List(_)) => {
-                return Err(unexpected_meta_item(item.span()))
-            }
-        };
-
-        Ok(result)
-    }
-
-    fn make_parse_action(&self, name: Option<&str>) -> TokenStream2 {
-        let name = if let Some(name) = name {
-            quote! { ::std::string::ToString::to_string(#name) }
-        } else {
-            quote! { ::gumdrop::Opt::to_string(&_opt) }
-        };
-
-        match self {
-            ParseFn::Default => quote! {
-                ::std::str::FromStr::from_str(::gumdrop::to_str(_arg)?)
-                    .map_err(|e| ::gumdrop::Error::failed_parse_with_name(
-                        #name, ::std::string::ToString::to_string(&e)))?
-            },
-            ParseFn::FromStr(None) => quote! {
-                ::std::convert::From::from(::gumdrop::to_str(_arg)?)
-            },
-            ParseFn::FromStr(Some(fun)) => quote! {
-                #fun(::gumdrop::to_str(_arg)?)
-            },
-            ParseFn::TryFromStr(fun) => quote! {
-                #fun(::gumdrop::to_str(_arg)?)
-                    .map_err(|e| ::gumdrop::Error::failed_parse_with_name(
-                        #name, ::std::string::ToString::to_string(&e)))?
-            },
-            ParseFn::FromOsStr(None) => quote! {
-                ::std::convert::From::from(_arg)
-            },
-            ParseFn::FromOsStr(Some(fun)) => quote! {
-                #fun(_arg)
-            },
-            ParseFn::TryFromOsStr(fun) => quote! {
-                #fun(_arg)
-                    .map_err(|e| ::gumdrop::Error::failed_parse_with_name(
-                        #name, ::std::string::ToString::to_string(&e)))?
-            },
-        }
-    }
-
-    fn make_parse_default_action(&self, ident: &Ident, expr: &str) -> TokenStream2 {
-        match self {
-            ParseFn::Default => quote! {
-                ::std::str::FromStr::from_str(#expr)
-                    .map_err(|e| ::gumdrop::Error::failed_parse_default(
-                        stringify!(#ident), #expr,
-                        ::std::string::ToString::to_string(&e)))?
-            },
-            ParseFn::FromStr(None) => quote! {
-                ::std::convert::From::from(#expr)
-            },
-            ParseFn::FromStr(Some(fun)) => quote! {
-                #fun(#expr)
-            },
-            ParseFn::TryFromStr(fun) => quote! {
-                #fun(#expr)
-                    .map_err(|e| ::gumdrop::Error::failed_parse_default(
-                        stringify!(#ident), #expr,
-                        ::std::string::ToString::to_string(&e)))?
-            },
-            ParseFn::FromOsStr(None) => quote! {
-                ::std::convert::From::from(::std::ffi::OsStr::new(#expr))
-            },
-            ParseFn::FromOsStr(Some(fun)) => quote! {
-                #fun(::std::ffi::OsStr::new(#expr))
-            },
-            ParseFn::TryFromOsStr(fun) => quote! {
-                #fun(::std::ffi::OsStr::new(#expr))
-                    .map_err(|e| ::gumdrop::Error::failed_parse_default(
-                        stringify!(#ident), #expr,
-                        ::std::string::ToString::to_string(&e)))?
-            },
-        }
-    }
-}
-
 impl ParseMethod {
     fn make_action_type(&self) -> TokenStream2 {
         let parse = self.parse_fn.make_parse_action(None);
@@ -1692,51 +1242,6 @@ fn first_ty_param(ty: &Type) -> Option<&Type> {
             }
         }
         _ => None,
-    }
-}
-
-fn is_outer(style: AttrStyle) -> bool {
-    matches!(style, AttrStyle::Outer)
-}
-
-fn lit_str(lit: &Lit) -> Result<String, Error> {
-    match lit {
-        Lit::Str(s) => Ok(s.value()),
-        _ => Err(Error::new(lit.span(), "expected string literal")),
-    }
-}
-
-fn lit_char(lit: &Lit) -> Result<char, Error> {
-    match lit {
-        Lit::Char(ch) => Ok(ch.value()),
-        // Character literals in attributes are not necessarily allowed
-        Lit::Str(s) => {
-            let s = s.value();
-            let mut chars = s.chars();
-
-            let first = chars.next();
-            let second = chars.next();
-
-            match (first, second) {
-                (Some(ch), None) => Ok(ch),
-                _ => Err(Error::new(
-                    lit.span(),
-                    "expected one-character string literal",
-                )),
-            }
-        }
-        _ => Err(Error::new(lit.span(), "expected character literal")),
-    }
-}
-
-fn path_eq(path: &Path, s: &str) -> bool {
-    path.segments.len() == 1 && {
-        let seg = path.segments.first().unwrap();
-
-        match seg.arguments {
-            PathArguments::None => seg.ident == s,
-            _ => false,
-        }
     }
 }
 
@@ -1947,8 +1452,4 @@ fn make_cmd_usage(cmds: &[Cmd]) -> String {
     res.pop();
 
     res
-}
-
-fn unexpected_meta_item(span: Span) -> Error {
-    Error::new(span, "unexpected meta item")
 }
