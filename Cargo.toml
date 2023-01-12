@@ -2,7 +2,7 @@
 name = "gumdrop"
 version = "0.8.1"
 authors = ["Murarth <murarth@gmail.com>"]
-edition = "2018"
+edition = "2021"
 
 description = "Option parser with custom derive support"
 
