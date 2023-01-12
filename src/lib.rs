@@ -462,9 +462,10 @@ pub trait Options {
 ///
 /// [`parse_args_default`]: fn.parse_args_default.html
 /// [`parse_args_default_or_exit`]: fn.parse_args_default_or_exit.html
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 pub enum ParsingStyle {
     /// Process all option arguments that appear
+    #[default]
     AllOptions,
     /// After the first "free" argument is encountered,
     /// all remaining arguments will be considered "free" arguments.
@@ -754,13 +755,6 @@ impl<'a> fmt::Display for Opt<'a> {
             Opt::LongWithArg(opt, _) => write!(f, "--{}", opt),
             Opt::Free(_) => write!(f, "free"),
         }
-    }
-}
-
-impl Default for ParsingStyle {
-    /// Returns the default parsing style, `AllOptions`.
-    fn default() -> ParsingStyle {
-        ParsingStyle::AllOptions
     }
 }
 

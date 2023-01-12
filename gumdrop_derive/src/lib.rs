@@ -873,8 +873,9 @@ struct Opt<'a> {
     // because it is not displayed to the user in usage text
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 enum ParseFn {
+    #[default]
     Default,
     FromStr(Option<Path>),
     TryFromStr(Path),
@@ -1661,12 +1662,6 @@ impl ParseFn {
                         ::std::string::ToString::to_string(&e)))?
             },
         }
-    }
-}
-
-impl Default for ParseFn {
-    fn default() -> ParseFn {
-        ParseFn::Default
     }
 }
 
