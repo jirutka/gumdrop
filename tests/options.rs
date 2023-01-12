@@ -5,7 +5,7 @@ use assert_matches::assert_matches;
 
 use gumdrop::Options;
 
-const EMPTY: &'static [&'static str] = &[];
+const EMPTY: &[&str] = &[];
 
 #[derive(Debug, Options)]
 struct NoOpts { }
@@ -110,19 +110,19 @@ fn test_command() {
     }
 
     let opts = Opts::parse_args_default(EMPTY).unwrap();
-    assert_eq!(opts.command.is_none(), true);
+    assert!(opts.command.is_none());
 
     let opts = Opts::parse_args_default(&["-h"]).unwrap();
-    assert_eq!(opts.help, true);
-    assert_eq!(opts.command.is_none(), true);
+    assert!(opts.help);
+    assert!(opts.command.is_none());
 
     let opts = Opts::parse_args_default(&["-h", "foo", "--foo", "x"]).unwrap();
-    assert_eq!(opts.help, true);
+    assert!(opts.help);
     let cmd = opts.command.unwrap();
     assert_matches!(cmd, Command::Foo(FooOpts{foo: Some(ref foo)}) if foo == "x");
 
     let opts = Opts::parse_args_default(&["--", "foo"]).unwrap();
-    assert_eq!(opts.help, false);
+    assert!(!opts.help);
     let cmd = opts.command.unwrap();
     assert_matches!(cmd, Command::Foo(_));
 
@@ -301,10 +301,10 @@ fn test_opt_bool() {
     }
 
     let opts = Opts::parse_args_default(&["--switch"]).unwrap();
-    assert_eq!(opts.switch, true);
+    assert!(opts.switch);
 
     let opts = Opts::parse_args_default(&["-s"]).unwrap();
-    assert_eq!(opts.switch, true);
+    assert!(opts.switch);
 
     is_err!(Opts::parse_args_default(&["--switch=x"]),
         "option `--switch` does not accept an argument");
@@ -436,7 +436,7 @@ fn test_opt_long() {
     }
 
     let opts = Opts::parse_args_default(&["--thing"]).unwrap();
-    assert_eq!(opts.foo, true);
+    assert!(opts.foo);
 
     is_err!(Opts::parse_args_default(&["-f"]),
         "unrecognized option `-f`");
@@ -453,7 +453,7 @@ fn test_opt_short() {
     }
 
     let opts = Opts::parse_args_default(&["-x"]).unwrap();
-    assert_eq!(opts.foo, true);
+    assert!(opts.foo);
 
     is_err!(Opts::parse_args_default(&["-f"]),
         "unrecognized option `-f`");
@@ -476,12 +476,12 @@ fn test_opt_short_override() {
     }
 
     let opts = Opts::parse_args_default(&["-o"]).unwrap();
-    assert_eq!(opts.option_0, false);
-    assert_eq!(opts.option_1, true);
+    assert!(!opts.option_0);
+    assert!(opts.option_1);
 
     let opts = Opts::parse_args_default(&["-O"]).unwrap();
-    assert_eq!(opts.option_0, true);
-    assert_eq!(opts.option_1, false);
+    assert!(opts.option_0);
+    assert!(!opts.option_1);
 }
 
 #[test]
@@ -680,10 +680,10 @@ fn test_help_flag() {
     }
 
     let opts = Opts::parse_args_default(EMPTY).unwrap();
-    assert_eq!(opts.help_requested(), false);
+    assert!(!opts.help_requested());
 
     let opts = Opts::parse_args_default(&["--help"]).unwrap();
-    assert_eq!(opts.help_requested(), true);
+    assert!(opts.help_requested());
 }
 
 #[test]
@@ -695,7 +695,7 @@ fn test_no_help_flag() {
     }
 
     let opts = Opts::parse_args_default(&["--help"]).unwrap();
-    assert_eq!(opts.help_requested(), false);
+    assert!(!opts.help_requested());
 }
 
 #[test]
@@ -711,16 +711,16 @@ fn test_many_help_flags() {
     }
 
     let opts = Opts::parse_args_default(EMPTY).unwrap();
-    assert_eq!(opts.help_requested(), false);
+    assert!(!opts.help_requested());
 
     let opts = Opts::parse_args_default(&["--help"]).unwrap();
-    assert_eq!(opts.help_requested(), true);
+    assert!(opts.help_requested());
 
     let opts = Opts::parse_args_default(&["--halp"]).unwrap();
-    assert_eq!(opts.help_requested(), true);
+    assert!(opts.help_requested());
 
     let opts = Opts::parse_args_default(&["--help-please"]).unwrap();
-    assert_eq!(opts.help_requested(), true);
+    assert!(opts.help_requested());
 }
 
 #[test]
@@ -762,25 +762,25 @@ fn test_help_flag_command() {
     }
 
     let opts = Opts::parse_args_default(EMPTY).unwrap();
-    assert_eq!(opts.help_requested(), false);
+    assert!(!opts.help_requested());
 
     let opts = Opts::parse_args_default(&["-h"]).unwrap();
-    assert_eq!(opts.help_requested(), true);
+    assert!(opts.help_requested());
 
     let opts = Opts::parse_args_default(&["foo", "-h"]).unwrap();
-    assert_eq!(opts.help_requested(), true);
+    assert!(opts.help_requested());
 
     let opts = Opts::parse_args_default(&["bar", "-h"]).unwrap();
-    assert_eq!(opts.help_requested(), true);
+    assert!(opts.help_requested());
 
     let opts = Opts::parse_args_default(&["baz", "-h"]).unwrap();
-    assert_eq!(opts.help_requested(), true);
+    assert!(opts.help_requested());
 
     let opts = Opts2::parse_args_default(EMPTY).unwrap();
-    assert_eq!(opts.help_requested(), false);
+    assert!(!opts.help_requested());
 
     let opts = Opts3::parse_args_default(EMPTY).unwrap();
-    assert_eq!(opts.help_requested(), false);
+    assert!(!opts.help_requested());
 }
 
 #[test]
@@ -804,14 +804,14 @@ fn test_type_attrs() {
         "unrecognized option `-h`");
 
     let opts = Opts::parse_args_default(&["--help"]).unwrap();
-    assert_eq!(opts.help, true);
-    assert_eq!(opts.help_requested(), false);
+    assert!(opts.help);
+    assert!(!opts.help_requested());
 
     let opts = Opts::parse_args_default(&["--foo"]).unwrap();
-    assert_eq!(opts.foo, true);
+    assert!(opts.foo);
 
     let opts = Opts::parse_args_default(&["-b"]).unwrap();
-    assert_eq!(opts.bar, true);
+    assert!(opts.bar);
 
     #[derive(Options)]
     #[options(no_short)]
@@ -825,11 +825,11 @@ fn test_type_attrs() {
         "unrecognized option `-f`");
 
     let opts = Opts2::parse_args_default(&["--foo", "-b"]).unwrap();
-    assert_eq!(opts.foo, true);
-    assert_eq!(opts.bar, true);
+    assert!(opts.foo);
+    assert!(opts.bar);
 
     let opts = Opts2::parse_args_default(&["--bar"]).unwrap();
-    assert_eq!(opts.bar, true);
+    assert!(opts.bar);
 
     #[derive(Options)]
     #[options(no_long)]
@@ -843,11 +843,11 @@ fn test_type_attrs() {
         "unrecognized option `--foo`");
 
     let opts = Opts3::parse_args_default(&["--bar"]).unwrap();
-    assert_eq!(opts.bar, true);
+    assert!(opts.bar);
 
     let opts = Opts3::parse_args_default(&["-f", "-b"]).unwrap();
-    assert_eq!(opts.foo, true);
-    assert_eq!(opts.bar, true);
+    assert!(opts.foo);
+    assert!(opts.bar);
 
     #[derive(Options)]
     #[options(no_help_flag)]
@@ -857,8 +857,8 @@ fn test_type_attrs() {
     }
 
     let opts = Opts4::parse_args_default(&["-h"]).unwrap();
-    assert_eq!(opts.help, true);
-    assert_eq!(opts.help_requested(), true);
+    assert!(opts.help);
+    assert!(opts.help_requested());
 
     #[derive(Options)]
     #[options(required)]
@@ -951,10 +951,10 @@ fn test_required_help() {
     }
 
     let opts = Opts::parse_args_default(&["-h"]).unwrap();
-    assert_eq!(opts.help, true);
+    assert!(opts.help);
 
     let opts = Opts2::parse_args_default(&["--secondary-help"]).unwrap();
-    assert_eq!(opts.secondary_help, true);
+    assert!(opts.secondary_help);
 }
 
 #[test]

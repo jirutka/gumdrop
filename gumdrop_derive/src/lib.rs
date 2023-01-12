@@ -81,8 +81,6 @@
 
 #![recursion_limit = "1024"]
 
-extern crate proc_macro;
-
 use std::iter::repeat;
 
 use quote::quote;
@@ -176,7 +174,7 @@ fn derive_options_enum(ast: &DeriveInput, data: &DataEnum) -> Result<TokenStream
                 .unwrap_or_else(|| make_command_name(&var_name.to_string())),
             help: opts.help.or(opts.doc),
             variant_name: var_name,
-            ty: ty,
+            ty,
         });
     }
 
@@ -346,7 +344,7 @@ fn derive_options_struct(ast: &DeriveInput, fields: &Fields) -> Result<TokenStre
                 opts.parse
                     .as_ref()
                     .unwrap_or(&ParseFn::Default)
-                    .make_parse_default_action(ident, &expr),
+                    .make_parse_default_action(ident, expr),
             );
         } else {
             #[cfg(not(feature = "default_expr"))]
@@ -456,7 +454,7 @@ fn derive_options_struct(ast: &DeriveInput, fields: &Fields) -> Result<TokenStre
 
         options.push(Opt {
             field: ident,
-            action: action,
+            action,
             long: opts.long,
             short: opts.short,
             no_short: opts.no_short,
@@ -1067,10 +1065,8 @@ impl AttrOpts {
             err!("`required` and `not_required` are mutually exclusive");
         }
 
-        if self.parse.is_some() {
-            if self.count {
-                err!("`count` and `parse` are mutually exclusive");
-            }
+        if self.parse.is_some() && self.count {
+            err!("`count` and `parse` are mutually exclusive");
         }
 
         #[cfg(feature = "default_expr")]
@@ -1150,7 +1146,7 @@ impl AttrOpts {
                     None => return Err(unexpected_meta_item(path.span())),
                 },
                 Meta::List(list) => match list.path.get_ident() {
-                    Some(ident) if ident.to_string() == "parse" => {
+                    Some(ident) if *ident == "parse" => {
                         if list.nested.len() != 1 {
                             return Err(unexpected_meta_item(list.path.span()));
                         }
@@ -1345,9 +1341,7 @@ impl DefaultOpts {
                     None => return Err(unexpected_meta_item(path.span())),
                 },
                 Meta::NameValue(nv) => match nv.path.get_ident() {
-                    Some(ident) if ident.to_string() == "help" => {
-                        self.help = Some(lit_str(&nv.lit)?)
-                    }
+                    Some(ident) if *ident == "help" => self.help = Some(lit_str(&nv.lit)?),
                     _ => return Err(unexpected_meta_item(nv.path.span())),
                 },
                 Meta::List(list) => return Err(unexpected_meta_item(list.path.span())),
@@ -1383,10 +1377,7 @@ impl FreeAction {
     }
 
     fn is_push(&self) -> bool {
-        match self {
-            FreeAction::Push(_) => true,
-            _ => false,
-        }
+        matches!(self, FreeAction::Push(_))
     }
 }
 
@@ -1550,7 +1541,7 @@ impl<'a> Opt<'a> {
         if let Some(default) = &self.default {
             res.push_str(" (default: ");
             res.push_str(default);
-            res.push_str(")");
+            res.push(')');
         }
 
         res
@@ -1606,7 +1597,7 @@ impl ParseFn {
             quote! { ::gumdrop::Opt::to_string(&_opt) }
         };
 
-        let res = match self {
+        match self {
             ParseFn::Default => quote! {
                 ::std::str::FromStr::from_str(::gumdrop::to_str(_arg)?)
                     .map_err(|e| ::gumdrop::Error::failed_parse_with_name(
@@ -1634,13 +1625,11 @@ impl ParseFn {
                     .map_err(|e| ::gumdrop::Error::failed_parse_with_name(
                         #name, ::std::string::ToString::to_string(&e)))?
             },
-        };
-
-        res
+        }
     }
 
     fn make_parse_default_action(&self, ident: &Ident, expr: &str) -> TokenStream2 {
-        let res = match self {
+        match self {
             ParseFn::Default => quote! {
                 ::std::str::FromStr::from_str(#expr)
                     .map_err(|e| ::gumdrop::Error::failed_parse_default(
@@ -1671,9 +1660,7 @@ impl ParseFn {
                         stringify!(#ident), #expr,
                         ::std::string::ToString::to_string(&e)))?
             },
-        };
-
-        res
+        }
     }
 }
 
@@ -1720,10 +1707,7 @@ impl ParseMethod {
         }
     }
     fn takes_arg(&self) -> bool {
-        match self.tuple_len {
-            Some(0) => false,
-            _ => true,
-        }
+        !matches!(self.tuple_len, Some(0))
     }
 }
 
@@ -1749,10 +1733,7 @@ fn first_ty_param(ty: &Type) -> Option<&Type> {
 }
 
 fn is_outer(style: AttrStyle) -> bool {
-    match style {
-        AttrStyle::Outer => true,
-        _ => false,
-    }
+    matches!(style, AttrStyle::Outer)
 }
 
 fn lit_str(lit: &Lit) -> Result<String, Error> {
@@ -1966,7 +1947,7 @@ where
         .max()
         .unwrap_or(0);
 
-    width.max(MIN_WIDTH).min(MAX_WIDTH)
+    width.clamp(MIN_WIDTH, MAX_WIDTH)
 }
 
 fn make_cmd_usage(cmds: &[Cmd]) -> String {

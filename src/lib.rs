@@ -315,16 +315,12 @@ pub trait Options {
             let mut command = &opts as &dyn Options;
             let mut command_str = String::new();
 
-            loop {
-                if let Some(new_command) = command.command() {
-                    command = new_command;
+            while let Some(new_command) = command.command() {
+                command = new_command;
 
-                    if let Some(name) = new_command.command_name() {
-                        command_str.push(' ');
-                        command_str.push_str(name);
-                    }
-                } else {
-                    break;
+                if let Some(name) = new_command.command_name() {
+                    command_str.push(' ');
+                    command_str.push_str(name);
                 }
             }
 
@@ -524,8 +520,8 @@ impl Error {
         Error {
             kind: ErrorKind::InsufficientArguments {
                 option: opt.to_string(),
-                expected: expected,
-                found: found,
+                expected,
+                found,
             },
         }
     }
@@ -683,7 +679,7 @@ impl<'a, S: 'a + AsRef<OsStr>> Parser<'a, S> {
         Parser {
             args: args.iter(),
             cur: None,
-            style: style,
+            style,
             terminated: false,
         }
     }
@@ -750,14 +746,13 @@ impl<'a, S: 'a> Clone for Parser<'a, S> {
     }
 }
 
-impl<'a> Opt<'a> {
-    #[doc(hidden)]
-    pub fn to_string(&self) -> String {
+impl<'a> fmt::Display for Opt<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Opt::Short(ch) => format!("-{}", ch),
-            Opt::Long(s) => format!("--{}", s),
-            Opt::LongWithArg(opt, _) => format!("--{}", opt),
-            Opt::Free(_) => "free".to_owned(),
+            Opt::Short(ch) => write!(f, "-{}", ch),
+            Opt::Long(s) => write!(f, "--{}", s),
+            Opt::LongWithArg(opt, _) => write!(f, "--{}", opt),
+            Opt::Free(_) => write!(f, "free"),
         }
     }
 }
